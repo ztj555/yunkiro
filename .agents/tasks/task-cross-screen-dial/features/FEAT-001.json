@@ -1,0 +1,40 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Implement the Go WebSocket relay server with PIN-based grouping, message forwarding, status push, and heartbeat detection. Single binary, no external dependencies, deployable on Win10 x64.",
+  "status": "completed",
+  "steps": [
+    "Create /projects/sandbox/yunkiro/relay/ directory with Go module initialization (go mod init github.com/ztj555/yunkiro/relay)",
+    "Create cmd/relay/main.go as the entry point: parse CLI flags for port (default 8080) and log-level (debug/info/warn/error), start HTTP server with WebSocket upgrade on /ws",
+    "Create internal/hub/hub.go: Hub struct manages all connections. Groups map[string]*Group (keyed by PIN). Methods: Register(conn, pin, role), Unregister(conn), Route(message)",
+    "Create internal/hub/group.go: Group struct holds PC connections (max N) and Phone connections (max 5 per PIN). Methods: AddPC, AddPhone, RemoveClient, BroadcastToPC, RouteToPhone(deviceId)",
+    "Create internal/ws/conn.go: Connection wrapper with read/write goroutines, message channel, ping/pong handling (45s timeout), and graceful close",
+    "Create internal/protocol/message.go: Define JSON message types - auth_request(pin, role, device_name, device_id), auth_response(ok/error), dial(messageId, phone_number, device_id, sim_slot), hangup(messageId, device_id), sms(messageId, phone_number, content, device_id), ack(messageId), phone_hello(device_id, device_name), phone_left(device_id), device_status(device_id, status), dial_result(messageId, success, error), sms_result(messageId, success, error), ping, pong",
+    "Create internal/handler/handler.go: WebSocket upgrade handler. On connect: read first message as auth_request, validate PIN format (4 digits), register in Hub with role (pc/phone). On auth success: if phone joins, broadcast phone_hello to all PCs in group; if PC joins, send list of online phones",
+    "Create internal/handler/router.go: Message routing logic. PC sends dial/hangup/sms -> route to target phone by device_id. Phone sends dial_result/sms_result/device_status -> route to all PCs in group. Handle ack messages for delivery confirmation",
+    "Implement heartbeat: each connection has lastActivity timestamp, updated on any message. Background goroutine checks every 15s, if lastActivity > 45s ago, close connection and trigger phone_left/cleanup",
+    "Implement graceful shutdown: OS signal handler (SIGINT/SIGTERM), close all connections, log final stats",
+    "Create internal/logger/logger.go: Simple leveled logger (debug/info/warn/error) writing to stdout with timestamps",
+    "Write unit tests in relay/internal/hub/hub_test.go: test group creation, client registration/unregistration, message routing, PIN validation",
+    "Write unit tests in relay/internal/protocol/message_test.go: test JSON serialization/deserialization of all message types",
+    "Write integration test in relay/cmd/relay/main_test.go: start server, connect two WebSocket clients (PC + Phone), authenticate with same PIN, send dial command from PC, verify phone receives it, send dial_result from phone, verify PC receives it",
+    "Ensure go build ./cmd/relay produces a single binary and go test ./... passes all tests"
+  ],
+  "acceptance_criteria": [
+    "go build -o relay.exe ./cmd/relay compiles without errors",
+    "go test ./... passes all unit and integration tests",
+    "Two WebSocket clients can connect with the same PIN and exchange messages",
+    "Phone connecting triggers phone_hello notification to PC clients in same group",
+    "Phone disconnecting triggers phone_left notification to PC clients in same group",
+    "45-second heartbeat timeout correctly disconnects inactive clients",
+    "Messages are only routed within the same PIN group (isolation)",
+    "relay binary starts with configurable --port and --log-level flags"
+  ],
+  "verification": [
+    "cd /projects/sandbox/yunkiro/relay && go build -o relay.exe ./cmd/relay",
+    "cd /projects/sandbox/yunkiro/relay && go test ./... -v",
+    "cd /projects/sandbox/yunkiro/relay && go vet ./..."
+  ],
+  "blocked_reason": null,
+  "findings": "All tests pass. go build produces ~9MB binary. gorilla/websocket v1.5.3 used. Mock Conn approach needed for hub unit tests (separate from integration tests with real WebSocket connections). Auth result must be written directly via WriteRaw before write pump starts. relay.exe binary should be in .gitignore."
+}

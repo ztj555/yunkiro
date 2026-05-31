@@ -1,0 +1,41 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Implement the Android Kotlin app that connects to relay, receives dial/sms commands, auto-dials, manages dual-SIM, and maintains foreground service for background keep-alive.",
+  "status": "completed",
+  "steps": [
+    "Create /projects/sandbox/yunkiro/android/ directory with standard Android project structure using Gradle. Create settings.gradle.kts, build.gradle.kts (project-level), and app/build.gradle.kts (module-level)",
+    "Configure app/build.gradle.kts: minSdk=26 (Android 8), targetSdk=34, applicationId=com.yunkiro.dialer, enable viewBinding, add dependencies: OkHttp (WebSocket), Kotlin coroutines, AndroidX (core-ktx, appcompat, lifecycle, work-manager)",
+    "Create AndroidManifest.xml with permissions: INTERNET, CALL_PHONE, READ_PHONE_STATE, FOREGROUND_SERVICE, RECEIVE_BOOT_COMPLETED, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE. Declare activities, services, broadcast receivers",
+    "Create app/src/main/java/com/yunkiro/dialer/relay/RelayConnection.kt: OkHttp WebSocket client. Connects to relay URL, sends auth_request with PIN + role=phone + device_id + device_name. Handles auth_response. Reconnect with exponential backoff. 30s ping interval.",
+    "Create app/src/main/java/com/yunkiro/dialer/relay/MessageHandler.kt: Parses incoming JSON messages. Dispatches: dial -> DialService, hangup -> HangupService, sms -> SmsService. Sends ack for each received message. Deduplication by messageId (LRU cache of last 100 IDs).",
+    "Create app/src/main/java/com/yunkiro/dialer/relay/Protocol.kt: Data classes for all protocol messages matching relay protocol (AuthRequest, AuthResponse, DialCommand, HangupCommand, SmsCommand, Ack, DialResult, SmsResult, DeviceStatus, Ping, Pong)",
+    "Create app/src/main/java/com/yunkiro/dialer/service/DialService.kt: Receives dial command with phone_number and sim_slot. Uses Intent.ACTION_CALL to initiate call. Handles dual-SIM selection via PhoneAccountHandle. Reports dial_result back through RelayConnection.",
+    "Create app/src/main/java/com/yunkiro/dialer/service/KeepAliveService.kt: Foreground service with persistent notification showing connection status. Holds partial wake lock during reconnection. Registers for network change broadcasts. Implements Doze-mode survival strategy (alarm manager as backup).",
+    "Create app/src/main/java/com/yunkiro/dialer/receiver/BootReceiver.kt: BroadcastReceiver for BOOT_COMPLETED. Starts KeepAliveService on device boot.",
+    "Create app/src/main/java/com/yunkiro/dialer/receiver/NetworkChangeReceiver.kt: Monitors connectivity changes. When network switches (WiFi<->Cellular), triggers relay reconnection.",
+    "Create app/src/main/java/com/yunkiro/dialer/ui/MainActivity.kt: Main activity with PIN input screen (first launch), connection status display, device info, manual connect/disconnect button, SIM card selection preference.",
+    "Create app/src/main/java/com/yunkiro/dialer/ui/SettingsActivity.kt: Settings screen: relay URL, PIN code, preferred SIM slot (Card1/Card2/Ask/Remember), autostart toggle, notification preferences.",
+    "Create app/src/main/res/layout/ XML layouts: activity_main.xml (PIN input, status card, connect button), activity_settings.xml (preferences list)",
+    "Create app/src/main/java/com/yunkiro/dialer/util/DeviceInfo.kt: Generates stable device_id (UUID stored in SharedPreferences), gets device_name (Build.MODEL), gets SIM info.",
+    "Write unit tests: app/src/test/java/com/yunkiro/dialer/relay/ProtocolTest.kt (JSON serialization), app/src/test/java/com/yunkiro/dialer/relay/MessageHandlerTest.kt (deduplication, dispatch)",
+    "Verify: ./gradlew assembleDebug compiles the APK, ./gradlew test passes unit tests"
+  ],
+  "acceptance_criteria": [
+    "./gradlew assembleDebug compiles without errors producing an APK",
+    "./gradlew test passes all unit tests",
+    "Protocol data classes correctly serialize/deserialize JSON matching relay format",
+    "RelayConnection handles WebSocket lifecycle (connect, auth, reconnect, close)",
+    "DialService can construct ACTION_CALL intent with phone number",
+    "KeepAliveService runs as foreground service with notification",
+    "BootReceiver registered to start service on device boot",
+    "Message deduplication works (same messageId ignored on retry)",
+    "Dual-SIM selection logic present in DialService"
+  ],
+  "verification": [
+    "cd /projects/sandbox/yunkiro/android && ./gradlew assembleDebug",
+    "cd /projects/sandbox/yunkiro/android && ./gradlew test"
+  ],
+  "blocked_reason": null,
+  "findings": "Android SDK installed at /opt/android-sdk. Java 17 required (Java 25 too new for AGP 8.2.2 / Gradle 8.5). Used unitTests.isReturnDefaultValues=true to handle android.util.Log in unit tests. AGP 8.2.2 with Kotlin 1.9.22 and OkHttp 4.12.0. Used @drawable/ic_notification as app icon instead of mipmap to avoid creating png launcher icons. assembleDebug produces APK at app/build/outputs/apk/debug/app-debug.apk. All 33 unit tests pass (ProtocolTest + MessageHandlerTest). local.properties with sdk.dir is gitignored."
+}
