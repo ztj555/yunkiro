@@ -178,7 +178,7 @@ class KeepAliveService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             WAKELOCK_TAG
         ).apply {
-            acquire(10 * 60 * 1000L) // 10 minutes max
+            acquire() // No timeout - held for the lifetime of the foreground service
         }
     }
 

@@ -10,6 +10,7 @@ const (
 	TypeHangup       = "hangup"
 	TypeSMS          = "sms"
 	TypeDialResult   = "dial_result"
+	TypeHangupResult = "hangup_result"
 	TypeSMSResult    = "sms_result"
 	TypeDeviceStatus = "device_status"
 	TypePhoneOnline  = "phone_online"
@@ -80,6 +81,14 @@ type SMSMessage struct {
 
 // DialResult is sent by phone as result of a dial command.
 type DialResult struct {
+	Type      string `json:"type"`
+	MessageID string `json:"message_id"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error"`
+}
+
+// HangupResult is sent as result of a hangup command.
+type HangupResult struct {
 	Type      string `json:"type"`
 	MessageID string `json:"message_id"`
 	Success   bool   `json:"success"`

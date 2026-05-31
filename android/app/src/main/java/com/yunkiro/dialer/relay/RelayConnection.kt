@@ -9,6 +9,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Manages WebSocket connection to the relay server.
  * Handles authentication, reconnection with exponential backoff, and heartbeat.
+ *
+ * Sends application-level {"type":"ping"} messages every 30s to keep the relay's
+ * inactivity reaper from closing idle connections. OkHttp-level pings are not
+ * surfaced to gorilla/websocket's ReadMessage on the server side, so we rely
+ * on app-level pings instead.
  */
 class RelayConnection(
     private val messageHandler: MessageHandler,
@@ -16,7 +21,7 @@ class RelayConnection(
 ) {
     companion object {
         private const val TAG = "RelayConnection"
-        private const val PING_INTERVAL_MS = 30_000L
+        private const val APP_PING_INTERVAL_MS = 30_000L
         private const val INITIAL_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 30_000L
         private const val CONNECT_TIMEOUT_S = 10L
@@ -33,7 +38,6 @@ class RelayConnection(
     private val client = OkHttpClient.Builder()
         .connectTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
-        .pingInterval(PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -45,6 +49,7 @@ class RelayConnection(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isRunning = AtomicBoolean(false)
     private var reconnectJob: Job? = null
+    private var pingJob: Job? = null
     private var currentBackoff = INITIAL_BACKOFF_MS
 
     @Volatile
@@ -71,6 +76,8 @@ class RelayConnection(
      */
     fun disconnect() {
         isRunning.set(false)
+        pingJob?.cancel()
+        pingJob = null
         reconnectJob?.cancel()
         reconnectJob = null
         webSocket?.close(1000, "User disconnect")
@@ -119,6 +126,10 @@ class RelayConnection(
                     deviceName = deviceName
                 ).toJson()
                 webSocket.send(authMsg)
+
+                // Start application-level ping loop to keep the relay's
+                // inactivity reaper from closing this connection.
+                startPingLoop()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -133,6 +144,7 @@ class RelayConnection(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "WebSocket closed: $code $reason")
+                stopPingLoop()
                 if (isRunning.get()) {
                     scheduleReconnect()
                 } else {
@@ -142,6 +154,7 @@ class RelayConnection(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}")
+                stopPingLoop()
                 if (isRunning.get()) {
                     scheduleReconnect()
                 } else {
@@ -149,6 +162,21 @@ class RelayConnection(
                 }
             }
         })
+    }
+
+    private fun startPingLoop() {
+        pingJob?.cancel()
+        pingJob = scope.launch {
+            while (isActive) {
+                delay(APP_PING_INTERVAL_MS)
+                webSocket?.send(Protocol.Ping.toJson())
+            }
+        }
+    }
+
+    private fun stopPingLoop() {
+        pingJob?.cancel()
+        pingJob = null
     }
 
     private fun scheduleReconnect() {

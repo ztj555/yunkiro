@@ -215,6 +215,127 @@ func TestHubRouteDialToPhone(t *testing.T) {
 	}
 }
 
+func TestHubRouteDialToDisconnectedPhone(t *testing.T) {
+	log := logger.New(logger.LevelDebug)
+	h := New(log)
+	h.Start()
+	defer h.Stop()
+
+	pcConn := ws.NewMockConn("1234", protocol.RolePC, "pc-001", "My PC", log)
+	h.Register(pcConn)
+
+	// PC sends dial to a phone that doesn't exist
+	dial := protocol.DialMessage{
+		Type:        protocol.TypeDial,
+		MessageID:   "msg-99",
+		PhoneNumber: "13800138000",
+		DeviceID:    "phone-nonexist",
+		SIMSlot:     0,
+	}
+	data, _ := json.Marshal(dial)
+	h.Route(pcConn, data)
+
+	// PC should receive an error dial_result
+	msg := pcConn.ReadSent()
+	if msg == nil {
+		t.Fatal("PC did not receive error response for unreachable phone")
+	}
+	var result protocol.DialResult
+	if err := json.Unmarshal(msg, &result); err != nil {
+		t.Fatalf("Failed to unmarshal error response: %v", err)
+	}
+	if result.Type != protocol.TypeDialResult {
+		t.Errorf("Error response type=%q, want %q", result.Type, protocol.TypeDialResult)
+	}
+	if result.Success {
+		t.Error("Error response should have success=false")
+	}
+	if result.MessageID != "msg-99" {
+		t.Errorf("Error response message_id=%q, want %q", result.MessageID, "msg-99")
+	}
+	if result.Error != "device not found" {
+		t.Errorf("Error response error=%q, want %q", result.Error, "device not found")
+	}
+}
+
+func TestHubRouteSmsToDisconnectedPhone(t *testing.T) {
+	log := logger.New(logger.LevelDebug)
+	h := New(log)
+	h.Start()
+	defer h.Stop()
+
+	pcConn := ws.NewMockConn("1234", protocol.RolePC, "pc-001", "My PC", log)
+	h.Register(pcConn)
+
+	// PC sends sms to a phone that doesn't exist
+	sms := protocol.SMSMessage{
+		Type:        protocol.TypeSMS,
+		MessageID:   "msg-sms-1",
+		PhoneNumber: "13800138000",
+		Content:     "Hello",
+		DeviceID:    "phone-nonexist",
+	}
+	data, _ := json.Marshal(sms)
+	h.Route(pcConn, data)
+
+	// PC should receive an error sms_result
+	msg := pcConn.ReadSent()
+	if msg == nil {
+		t.Fatal("PC did not receive error response for unreachable phone (sms)")
+	}
+	var result protocol.SMSResult
+	if err := json.Unmarshal(msg, &result); err != nil {
+		t.Fatalf("Failed to unmarshal error response: %v", err)
+	}
+	if result.Type != protocol.TypeSMSResult {
+		t.Errorf("Error response type=%q, want %q", result.Type, protocol.TypeSMSResult)
+	}
+	if result.Success {
+		t.Error("Error response should have success=false")
+	}
+	if result.MessageID != "msg-sms-1" {
+		t.Errorf("Error response message_id=%q, want %q", result.MessageID, "msg-sms-1")
+	}
+}
+
+func TestHubRouteHangupToDisconnectedPhone(t *testing.T) {
+	log := logger.New(logger.LevelDebug)
+	h := New(log)
+	h.Start()
+	defer h.Stop()
+
+	pcConn := ws.NewMockConn("1234", protocol.RolePC, "pc-001", "My PC", log)
+	h.Register(pcConn)
+
+	// PC sends hangup to a phone that doesn't exist
+	hangup := protocol.HangupMessage{
+		Type:      protocol.TypeHangup,
+		MessageID: "msg-hangup-1",
+		DeviceID:  "phone-nonexist",
+	}
+	data, _ := json.Marshal(hangup)
+	h.Route(pcConn, data)
+
+	// PC should receive an error hangup_result
+	msg := pcConn.ReadSent()
+	if msg == nil {
+		t.Fatal("PC did not receive error response for unreachable phone (hangup)")
+	}
+	var result protocol.HangupResult
+	if err := json.Unmarshal(msg, &result); err != nil {
+		t.Fatalf("Failed to unmarshal error response: %v", err)
+	}
+	if result.Type != protocol.TypeHangupResult {
+		t.Errorf("Error response type=%q, want %q", result.Type, protocol.TypeHangupResult)
+	}
+	if result.Success {
+		t.Error("Error response should have success=false")
+	}
+	if result.MessageID != "msg-hangup-1" {
+		t.Errorf("Error response message_id=%q, want %q", result.MessageID, "msg-hangup-1")
+	}
+}
+
 func TestHubRouteResultToPCs(t *testing.T) {
 	log := logger.New(logger.LevelDebug)
 	h := New(log)

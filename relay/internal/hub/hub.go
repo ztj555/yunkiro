@@ -153,9 +153,10 @@ func (h *Hub) routePCToPhone(conn *ws.Conn, msgType string, data []byte) {
 		return
 	}
 
-	// Extract device_id (target phone)
+	// Extract device_id (target phone) and message_id
 	var envelope struct {
-		DeviceID string `json:"device_id"`
+		DeviceID  string `json:"device_id"`
+		MessageID string `json:"message_id"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		h.log.Warn("Failed to parse device_id from %s message", msgType)
@@ -167,12 +168,51 @@ func (h *Hub) routePCToPhone(conn *ws.Conn, msgType string, data []byte) {
 	h.mu.RUnlock()
 	if !ok {
 		h.log.Warn("Group not found for pin=%s", conn.PIN)
+		h.sendDeviceNotFoundError(conn, msgType, envelope.MessageID)
 		return
 	}
 
 	if !group.RouteToPhone(envelope.DeviceID, data) {
 		h.log.Warn("Target phone not found: device=%s in pin=%s", envelope.DeviceID, conn.PIN)
+		h.sendDeviceNotFoundError(conn, msgType, envelope.MessageID)
 	}
+}
+
+// sendDeviceNotFoundError sends an error response back to the PC when
+// the target phone is not reachable.
+func (h *Hub) sendDeviceNotFoundError(conn *ws.Conn, msgType string, messageID string) {
+	var resp interface{}
+	switch msgType {
+	case protocol.TypeDial:
+		resp = protocol.DialResult{
+			Type:      protocol.TypeDialResult,
+			MessageID: messageID,
+			Success:   false,
+			Error:     "device not found",
+		}
+	case protocol.TypeHangup:
+		resp = protocol.HangupResult{
+			Type:      protocol.TypeHangupResult,
+			MessageID: messageID,
+			Success:   false,
+			Error:     "device not found",
+		}
+	case protocol.TypeSMS:
+		resp = protocol.SMSResult{
+			Type:      protocol.TypeSMSResult,
+			MessageID: messageID,
+			Success:   false,
+			Error:     "device not found",
+		}
+	default:
+		return
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		h.log.Warn("Failed to marshal error response: %v", err)
+		return
+	}
+	conn.Send(data)
 }
 
 func (h *Hub) routePhoneToPCs(conn *ws.Conn, data []byte) {
