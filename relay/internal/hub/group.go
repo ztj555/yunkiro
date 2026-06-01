@@ -30,15 +30,21 @@ func NewGroup(pin string, log *logger.Logger) *Group {
 // AddPC adds a PC connection to the group.
 func (g *Group) AddPC(conn *ws.Conn) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	if old, ok := g.pcs[conn.DeviceID]; ok && old != conn {
+		go old.Close()
+	}
 	g.pcs[conn.DeviceID] = conn
+	g.mu.Unlock()
 }
 
 // AddPhone adds a phone connection to the group.
 func (g *Group) AddPhone(conn *ws.Conn) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	if old, ok := g.phones[conn.DeviceID]; ok && old != conn {
+		go old.Close()
+	}
 	g.phones[conn.DeviceID] = conn
+	g.mu.Unlock()
 }
 
 // RemoveClient removes a connection from the group. Returns true if the group is now empty.

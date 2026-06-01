@@ -78,13 +78,12 @@ func (h *Hub) Register(conn *ws.Conn) []protocol.PhoneInfo {
 
 // Unregister removes a connection from its group.
 func (h *Hub) Unregister(conn *ws.Conn) {
-	h.mu.Lock()
+	h.mu.RLock()
 	group, ok := h.groups[conn.PIN]
+	h.mu.RUnlock()
 	if !ok {
-		h.mu.Unlock()
 		return
 	}
-	h.mu.Unlock()
 
 	if conn.Role == protocol.RolePhone {
 		// Broadcast phone_offline to PCs before removing
@@ -246,16 +245,23 @@ func (h *Hub) heartbeatLoop() {
 }
 
 func (h *Hub) checkHeartbeats() {
+	// Collect a snapshot of groups under read lock
 	h.mu.RLock()
+	groupsCopy := make([]*Group, 0, len(h.groups))
+	for _, g := range h.groups {
+		groupsCopy = append(groupsCopy, g)
+	}
+	h.mu.RUnlock()
+
+	// Now iterate groups without holding hub lock
 	var stale []*ws.Conn
-	for _, group := range h.groups {
+	for _, group := range groupsCopy {
 		for _, conn := range group.AllConnections() {
 			if time.Since(conn.LastActivity()) > HeartbeatTimeout {
 				stale = append(stale, conn)
 			}
 		}
 	}
-	h.mu.RUnlock()
 
 	for _, conn := range stale {
 		h.log.Info("Heartbeat timeout: device=%s pin=%s", conn.DeviceID, conn.PIN)

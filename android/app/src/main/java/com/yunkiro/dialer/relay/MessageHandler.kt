@@ -22,13 +22,16 @@ class MessageHandler(
     }
 
     // LRU set for deduplication - maintains insertion order, oldest entries removed first
-    private val processedIds = object : LinkedHashSet<String>() {
-        override fun add(element: String): Boolean {
-            if (size >= MAX_DEDUP_SIZE) {
-                val first = iterator().next()
-                remove(first)
+    private val processedIds = LinkedHashSet<String>()
+    private val dedupLock = Any()
+
+    private fun addProcessedId(id: String) {
+        synchronized(dedupLock) {
+            if (processedIds.size >= MAX_DEDUP_SIZE) {
+                val first = processedIds.iterator().next()
+                processedIds.remove(first)
             }
-            return super.add(element)
+            processedIds.add(id)
         }
     }
 
@@ -107,18 +110,24 @@ class MessageHandler(
      * Check if a message ID has already been processed.
      */
     fun isDuplicate(messageId: String): Boolean {
-        return processedIds.contains(messageId)
+        synchronized(dedupLock) {
+            return processedIds.contains(messageId)
+        }
     }
 
     /**
      * Mark a message ID as processed.
      */
     fun markProcessed(messageId: String) {
-        processedIds.add(messageId)
+        addProcessedId(messageId)
     }
 
     /**
      * Get the current number of tracked message IDs (for testing).
      */
-    fun getProcessedCount(): Int = processedIds.size
+    fun getProcessedCount(): Int {
+        synchronized(dedupLock) {
+            return processedIds.size
+        }
+    }
 }
