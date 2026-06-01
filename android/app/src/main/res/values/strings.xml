@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YunKiro Dialer</string>
+    <string name="hint_relay_url">Relay URL</string>
+    <string name="hint_pin">PIN (4 digits)</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="status_label">Connection Status</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_connected">Connected</string>
+    <string name="device_info_label">Device Info</string>
+</resources>

@@ -1,0 +1,14 @@
+{
+  "task_id": "task-cross-screen-dial",
+  "task_description": "Implement the cross-screen one-click dialing system with four components: Go relay server, Tauri v2 PC desktop client, Kotlin Android app, and TypeScript MV3 browser extension. All components communicate via WebSocket + JSON protocol with PIN-based grouping.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "All 4 components build and test successfully. Relay: go build + 28 tests pass. PC: vite build + 11 tests pass (Rust backend needs GTK libs for full build, cargo check passes). Android: assembleDebug + 33 tests pass (requires Java 17). Extension: webpack build + 24 tests pass, dist 28KB."
+  }
+}

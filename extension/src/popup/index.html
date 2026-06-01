@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YunKiro Dial</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <h1>YunKiro</h1>
+      <span id="status-dot" class="status-dot status-dot--disconnected"></span>
+    </header>
+
+    <section class="quick-dial">
+      <input type="tel" id="phone-input" placeholder="Enter phone number" maxlength="11">
+      <button id="dial-btn">Dial</button>
+    </section>
+
+    <section class="history">
+      <h2>Recent</h2>
+      <ul id="history-list"></ul>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

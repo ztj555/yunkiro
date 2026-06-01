@@ -1,0 +1,19 @@
+{
+  "project_type": "Cross-screen one-click dialing system with 4 components: Go relay, Tauri v2 desktop, Kotlin Android app, TypeScript browser extension",
+  "language": "Go (relay), TypeScript/React (PC frontend), Rust (Tauri backend), Kotlin (Android), TypeScript (browser extension)",
+  "build_system": "Go modules (relay), npm + Cargo via Tauri CLI (PC), Gradle (Android), npm/webpack (browser extension)",
+  "test_framework": "Go testing (relay), vitest/jest (PC frontend), JUnit (Android), jest (browser extension)",
+  "build_command": "relay: cd relay && go build -o relay.exe ./cmd/relay; PC: cd pc && npm install && npm run tauri build; Android: cd android && ./gradlew assembleDebug; Extension: cd extension && npm install && npm run build",
+  "test_command": "relay: cd relay && go test ./...; PC: cd pc && npm test; Android: cd android && ./gradlew test; Extension: cd extension && npm test",
+  "verification_instructions": "1. relay: go build compiles, go test passes, WebSocket connects on configured port. 2. PC: tauri build compiles, can connect to relay. 3. Android: gradle assembleDebug compiles. 4. Extension: npm run build produces dist/.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "Go 1.25.1 available, Node.js v22 available, Rust 1.92.0 available, Java 25 + Gradle 8.14 available. All pre-installed in sandbox.",
+  "environment_constraints": "OPEN_INTERNET network mode - full access to package registries. No Android SDK pre-installed (need to install for Kotlin build). No Tauri CLI pre-installed (install via cargo). No physical devices for end-to-end testing.",
+  "contribution_requirements": "Greenfield project - no existing contribution guidelines. Follow standard practices for each technology.",
+  "key_patterns": "WebSocket + JSON protocol for all communication. PIN-based grouping (4-digit). 30s heartbeat. ACK-based message reliability. State machine for connection management.",
+  "relevant_files": [
+    "/projects/sandbox/yunkiro/跨屏拨号-需求规格说明书.md",
+    "/projects/sandbox/yunkiro/关键问题.txt"
+  ],
+  "directory_structure": "relay/ - Go WebSocket relay server; pc/ - Tauri v2 desktop app; android/ - Kotlin Android app; extension/ - Chrome/Edge MV3 browser extension"
+}

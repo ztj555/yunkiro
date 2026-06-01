@@ -1,0 +1,44 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Implement the Chrome/Edge MV3 browser extension that identifies Chinese mobile phone numbers on web pages, shows a one-click dial button, and communicates with the PC desktop client via local WebSocket.",
+  "status": "completed",
+  "steps": [
+    "Create /projects/sandbox/yunkiro/extension/ directory. Initialize npm project with package.json (name: yunkiro-extension, type: module). Add dev dependencies: typescript, webpack, webpack-cli, ts-loader, copy-webpack-plugin, @types/chrome",
+    "Create extension/src/manifest.json (MV3): manifest_version 3, name 'YunKiro - One Click Dial', permissions: activeTab, storage, clipboardRead. content_scripts matching all URLs. background service_worker. action with popup.",
+    "Create extension/webpack.config.ts: Multiple entry points (background, content, popup). Output to dist/. Copy manifest.json and assets to dist/. TypeScript compilation.",
+    "Create extension/src/background/index.ts: Service worker. Manages WebSocket connection to PC client (ws://localhost:8765). Handles messages from content script and popup. Connection state management. Reconnect logic. No persistent polling - event-driven only.",
+    "Create extension/src/content/index.ts: Content script injected into web pages. Scans DOM for Chinese mobile numbers (regex: /1[3-9]\\d{9}/). Creates small dial button icon next to detected numbers. Handles click -> sends message to background script. Uses MutationObserver for dynamically loaded content. Avoids re-scanning already processed nodes.",
+    "Create extension/src/content/numberDetector.ts: Phone number detection logic. Walks text nodes in document. Regex matching for 11-digit numbers starting with 1[3-9]. Filters out numbers in input fields, scripts, styles. Returns array of {number, element, position}.",
+    "Create extension/src/content/dialButton.ts: Creates and manages dial button UI elements. Small phone icon (SVG inline, no external assets). Positioned near detected number. Click handler sends dial request. Shows brief feedback (success/failure indicator).",
+    "Create extension/src/content/styles.css: Minimal CSS for dial buttons. Non-intrusive styling. Z-index management. Hover effects. Success/failure animation.",
+    "Create extension/src/popup/index.html: Simple popup UI showing connection status to PC client, last dialed number, quick dial input field.",
+    "Create extension/src/popup/popup.ts: Popup logic. Queries background for connection status. Shows green/red indicator. Quick dial input with send button. Displays recent dial history (last 5 numbers from chrome.storage.local).",
+    "Create extension/src/shared/protocol.ts: Shared message types between extension and PC client. DialRequest(number), DialResponse(success, error), StatusQuery, StatusResponse(connected, phones[]).",
+    "Create extension/src/shared/connection.ts: WebSocket wrapper for connecting to PC client local server. Handles connect/disconnect/reconnect. Message serialization. Event emitter pattern.",
+    "Create extension/tsconfig.json: TypeScript config targeting ES2020, strict mode, module ES2020, moduleResolution bundler.",
+    "Write tests: extension/src/__tests__/numberDetector.test.ts (detect valid numbers, reject invalid, handle edge cases like numbers in URLs or dates), extension/src/__tests__/protocol.test.ts (message serialization)",
+    "Add build script to package.json: 'build' runs webpack in production mode, 'dev' runs webpack in watch mode, 'test' runs jest",
+    "Verify: npm install succeeds, npm run build produces dist/ with manifest.json + compiled JS, npm test passes, total dist/ size < 500KB"
+  ],
+  "acceptance_criteria": [
+    "npm install completes without errors",
+    "npm run build produces dist/ directory with valid MV3 extension structure",
+    "dist/ contains: manifest.json, background script, content script, popup HTML/JS",
+    "Total dist/ size < 500KB",
+    "Number detection correctly identifies Chinese mobile numbers (1[3-9]XXXXXXXXX)",
+    "Number detection ignores numbers in input fields, script tags, and style tags",
+    "WebSocket connection logic handles connect/disconnect to local PC client",
+    "Content script creates dial buttons next to detected numbers",
+    "Popup shows connection status and quick dial input",
+    "npm test passes all unit tests"
+  ],
+  "verification": [
+    "cd /projects/sandbox/yunkiro/extension && npm install",
+    "cd /projects/sandbox/yunkiro/extension && npm run build",
+    "cd /projects/sandbox/yunkiro/extension && npm test -- --passWithNoTests",
+    "ls -la /projects/sandbox/yunkiro/extension/dist/ && du -sh /projects/sandbox/yunkiro/extension/dist/"
+  ],
+  "blocked_reason": null,
+  "findings": "All 24 tests pass. Build produces 28KB dist/ (well under 500KB target). Used ESM throughout with ts-jest ESM preset. No issues encountered."
+}
