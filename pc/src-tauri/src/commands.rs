@@ -47,6 +47,22 @@ pub async fn disconnect(state: State<'_, RelayState>) -> Result<(), String> {
     }
     relay.state = ConnectionState::Disconnected;
     relay.phones.clear();
+    relay.active_device_id = None;
+    // Drop any waiting bridge requests; their receivers will resolve as
+    // "Dial timed out" instead of hanging.
+    relay.pending_bridge.clear();
+    Ok(())
+}
+
+/// Sets the phone the browser-extension bridge should dial. Called by the
+/// frontend whenever the user selects a phone in the list.
+#[tauri::command]
+pub async fn set_active_device(
+    state: State<'_, RelayState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    let mut relay = state.inner.lock().await;
+    relay.active_device_id = device_id;
     Ok(())
 }
 

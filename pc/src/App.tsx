@@ -59,7 +59,10 @@ function App() {
         <PhoneList
           phones={relay.phones}
           selectedId={selectedPhone}
-          onSelect={setSelectedPhone}
+          onSelect={(id) => {
+            setSelectedPhone(id);
+            relay.setActiveDevice(id);
+          }}
         />
 
         <div className="tabs">

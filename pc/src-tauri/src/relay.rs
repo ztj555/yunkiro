@@ -1,9 +1,10 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -33,6 +34,23 @@ pub struct RelayInner {
     pub phones: Vec<PhoneInfo>,
     pub sender: Option<mpsc::UnboundedSender<String>>,
     pub should_reconnect: bool,
+    /// Stable per-process identity. Reusing the same device_id across reconnects
+    /// means the relay replaces our old slot instead of leaving a ghost
+    /// connection alive until its heartbeat times out.
+    pub device_id: String,
+    /// The phone the user has selected in the UI. The browser-extension bridge
+    /// dials this device, falling back to the first online phone when unset.
+    pub active_device_id: Option<String>,
+    /// Dial/SMS requests originated by the browser extension, keyed by
+    /// message_id, awaiting the real result coming back from the phone.
+    pub pending_bridge: HashMap<String, oneshot::Sender<BridgeResult>>,
+}
+
+/// Result of a bridged dial/sms request, delivered back to the extension.
+#[derive(Debug, Clone)]
+pub struct BridgeResult {
+    pub success: bool,
+    pub error: String,
 }
 
 pub struct RelayState {
@@ -47,6 +65,9 @@ impl RelayState {
                 phones: Vec::new(),
                 sender: None,
                 should_reconnect: false,
+                device_id: uuid::Uuid::new_v4().to_string(),
+                active_device_id: None,
+                pending_bridge: HashMap::new(),
             })),
         }
     }
@@ -66,7 +87,10 @@ pub async fn connect_relay(
         let _ = app.emit("relay-status-changed", "connecting");
     }
 
-    let device_id = uuid::Uuid::new_v4().to_string();
+    let device_id = {
+        let relay = inner.lock().await;
+        relay.device_id.clone()
+    };
     let mut attempt: u32 = 0;
 
     loop {
@@ -280,14 +304,38 @@ async fn handle_message(
             let _ = app.emit("device-status", payload.to_string());
         }
         "dial_result" => {
+            fulfill_bridge(inner, &msg).await;
             let _ = app.emit("dial-result", text);
         }
         "sms_result" => {
+            fulfill_bridge(inner, &msg).await;
             let _ = app.emit("sms-result", text);
         }
         "pong" => {
             // Heartbeat response, no action needed
         }
         _ => {}
+    }
+}
+
+/// If a browser-extension request is waiting on this message_id, deliver the
+/// real result to it so the extension reports the true outcome.
+async fn fulfill_bridge(inner: &Arc<Mutex<RelayInner>>, msg: &serde_json::Value) {
+    let message_id = match msg.get("message_id").and_then(|m| m.as_str()) {
+        Some(id) => id.to_string(),
+        None => return,
+    };
+    let tx = {
+        let mut relay = inner.lock().await;
+        relay.pending_bridge.remove(&message_id)
+    };
+    if let Some(tx) = tx {
+        let success = msg.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
+        let error = msg
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("")
+            .to_string();
+        let _ = tx.send(BridgeResult { success, error });
     }
 }

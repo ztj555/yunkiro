@@ -14,6 +14,7 @@ interface RelayHook {
   dial: (number: string, deviceId: string, simSlot: number) => void;
   hangup: (deviceId: string) => void;
   sendSMS: (number: string, content: string, deviceId: string) => void;
+  setActiveDevice: (deviceId: string) => void;
 }
 
 export function useRelay(): RelayHook {
@@ -243,6 +244,16 @@ export function useRelay(): RelayHook {
     [sendCommand]
   );
 
+  // Tell the Tauri backend which phone the browser-extension bridge should
+  // dial. No-op in the browser dev fallback.
+  const setActiveDevice = useCallback((deviceId: string) => {
+    if (isTauri()) {
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("set_active_device", { deviceId }).catch(console.error);
+      });
+    }
+  }, []);
+
   // Listen for Tauri events when running in Tauri
   useEffect(() => {
     if (!isTauri()) return;
@@ -339,5 +350,6 @@ export function useRelay(): RelayHook {
     dial,
     hangup,
     sendSMS,
+    setActiveDevice,
   };
 }

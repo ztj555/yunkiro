@@ -26,6 +26,7 @@ fn main() {
             commands::send_sms,
             commands::get_status,
             commands::get_phones,
+            commands::set_active_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
