@@ -85,8 +85,19 @@ func (h *Hub) Unregister(conn *ws.Conn) {
 		return
 	}
 
+	// Remove only if this is still the current connection for its DeviceID.
+	// A stale connection (already replaced by a reconnect with the same
+	// DeviceID) must NOT trigger phone_offline or evict the new connection
+	// from the routing map. This is what caused "phone reopened -> PC shows
+	// offline / device not found" after a quick reconnect.
+	removed, empty := group.RemoveClient(conn)
+	if !removed {
+		h.log.Debug("Stale connection closed (already replaced): device=%s pin=%s", conn.DeviceID, conn.PIN)
+		return
+	}
+
 	if conn.Role == protocol.RolePhone {
-		// Broadcast phone_offline to PCs before removing
+		// Broadcast phone_offline to PCs now that the phone is really gone.
 		msg := protocol.PhoneOffline{
 			Type:       protocol.TypePhoneOffline,
 			DeviceID:   conn.DeviceID,
@@ -99,7 +110,6 @@ func (h *Hub) Unregister(conn *ws.Conn) {
 		h.log.Info("PC disconnected: device=%s pin=%s", conn.DeviceID, conn.PIN)
 	}
 
-	empty := group.RemoveClient(conn)
 	if empty {
 		h.mu.Lock()
 		// Double-check it's still empty (another goroutine might have added)

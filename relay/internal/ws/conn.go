@@ -80,7 +80,9 @@ func (c *Conn) Send(data []byte) bool {
 func (c *Conn) Close() {
 	c.closeOnce.Do(func() {
 		close(c.done)
-		c.ws.Close()
+		if c.ws != nil {
+			c.ws.Close()
+		}
 		if c.OnClose != nil {
 			c.OnClose(c)
 		}

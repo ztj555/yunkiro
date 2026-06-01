@@ -47,17 +47,31 @@ func (g *Group) AddPhone(conn *ws.Conn) {
 	g.mu.Unlock()
 }
 
-// RemoveClient removes a connection from the group. Returns true if the group is now empty.
-func (g *Group) RemoveClient(conn *ws.Conn) bool {
+// RemoveClient removes a connection from the group, but ONLY if it is still the
+// currently-registered connection for its DeviceID. This prevents a stale/old
+// connection (that was already replaced by a reconnect with the same DeviceID)
+// from accidentally evicting the new live connection from the routing map.
+//
+// Returns:
+//   - removed: true if this connection was the current one and was removed.
+//   - empty:   true if the group has no connections left.
+func (g *Group) RemoveClient(conn *ws.Conn) (removed bool, empty bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	switch conn.Role {
 	case protocol.RolePC:
-		delete(g.pcs, conn.DeviceID)
+		if g.pcs[conn.DeviceID] == conn {
+			delete(g.pcs, conn.DeviceID)
+			removed = true
+		}
 	case protocol.RolePhone:
-		delete(g.phones, conn.DeviceID)
+		if g.phones[conn.DeviceID] == conn {
+			delete(g.phones, conn.DeviceID)
+			removed = true
+		}
 	}
-	return len(g.pcs) == 0 && len(g.phones) == 0
+	empty = len(g.pcs) == 0 && len(g.phones) == 0
+	return removed, empty
 }
 
 // BroadcastToPCs sends a message to all PC connections in the group.

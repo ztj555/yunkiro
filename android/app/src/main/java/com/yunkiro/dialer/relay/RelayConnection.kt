@@ -26,6 +26,16 @@ class RelayConnection(
         private const val MAX_BACKOFF_MS = 30_000L
         private const val CONNECT_TIMEOUT_S = 10L
         private const val READ_TIMEOUT_S = 45L
+
+        // If no inbound data (pong or any message) arrives within this window,
+        // the socket is considered a half-open "zombie" (common after Doze) and
+        // is rebuilt. Relay replies a pong to every 30s ping, so 75s = ~2.5
+        // missed cycles is a safe threshold.
+        private const val STALE_TIMEOUT_MS = 75_000L
+
+        // Screen-on health check: how long to wait for a ping response before
+        // forcing a reconnect, so the phone is usable within ~3s of waking.
+        private const val HEALTH_CHECK_TIMEOUT_MS = 3_000L
     }
 
     enum class ConnectionState {
@@ -51,6 +61,11 @@ class RelayConnection(
     private var reconnectJob: Job? = null
     private var pingJob: Job? = null
     private var currentBackoff = INITIAL_BACKOFF_MS
+
+    // Timestamp of the last inbound message (any type). Used to detect
+    // half-open zombie connections that Doze can leave behind.
+    @Volatile
+    private var lastInboundAt = System.currentTimeMillis()
 
     @Volatile
     var state: ConnectionState = ConnectionState.DISCONNECTED
@@ -93,13 +108,44 @@ class RelayConnection(
     }
 
     /**
-     * Force a reconnection attempt.
+     * Force a reconnection attempt. Resets the backoff so recovery is fast
+     * (used by network-available callbacks and the screen-on health check).
      */
     fun reconnect() {
         if (!isRunning.get()) return
+        currentBackoff = INITIAL_BACKOFF_MS
         webSocket?.close(1000, "Reconnecting")
         webSocket = null
         scheduleReconnect()
+    }
+
+    /**
+     * Proactively verify the connection is alive — called when the screen turns
+     * on after the phone may have been in Doze. Sends a ping and forces a
+     * reconnect if no response arrives within HEALTH_CHECK_TIMEOUT_MS, so the
+     * user gets a usable connection within ~3 seconds of waking the phone.
+     */
+    fun checkHealthAndRecover() {
+        if (!isRunning.get()) return
+        val ws = webSocket
+        if (ws == null) {
+            scheduleReconnect()
+            return
+        }
+        val before = lastInboundAt
+        val sent = ws.send(Protocol.Ping.toJson())
+        if (!sent) {
+            Log.w(TAG, "Health check: ping send failed -> reconnect")
+            reconnect()
+            return
+        }
+        scope.launch {
+            delay(HEALTH_CHECK_TIMEOUT_MS)
+            if (isRunning.get() && lastInboundAt == before) {
+                Log.w(TAG, "Health check: no response in ${HEALTH_CHECK_TIMEOUT_MS}ms (zombie) -> reconnect")
+                reconnect()
+            }
+        }
     }
 
     private fun doConnect() {
@@ -118,6 +164,7 @@ class RelayConnection(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected to $relayUrl")
                 currentBackoff = INITIAL_BACKOFF_MS
+                lastInboundAt = System.currentTimeMillis()
 
                 // Send auth message
                 val authMsg = Protocol.AuthRequest(
@@ -134,6 +181,7 @@ class RelayConnection(
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 Log.d(TAG, "Received: $text")
+                lastInboundAt = System.currentTimeMillis()
                 messageHandler.handleMessage(text)
             }
 
@@ -169,7 +217,17 @@ class RelayConnection(
         pingJob = scope.launch {
             while (isActive) {
                 delay(APP_PING_INTERVAL_MS)
-                webSocket?.send(Protocol.Ping.toJson())
+                val ws = webSocket ?: break
+                // Zombie detection: the relay replies a pong to every ping, so
+                // we should have received *something* within the stale window.
+                // If not, the socket is half-open (typical after Doze) and we
+                // rebuild it instead of silently staying "connected".
+                if (System.currentTimeMillis() - lastInboundAt > STALE_TIMEOUT_MS) {
+                    Log.w(TAG, "No inbound data for >${STALE_TIMEOUT_MS}ms (zombie) -> reconnect")
+                    reconnect()
+                    break
+                }
+                ws.send(Protocol.Ping.toJson())
             }
         }
     }

@@ -3,8 +3,10 @@ package com.yunkiro.dialer.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -13,6 +15,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.yunkiro.dialer.R
 import com.yunkiro.dialer.YunKiroApp
 import com.yunkiro.dialer.relay.MessageHandler
@@ -37,6 +40,12 @@ class KeepAliveService : Service() {
         const val EXTRA_RELAY_URL = "relay_url"
         const val EXTRA_PIN = "pin"
 
+        // Shared prefs (kept in sync with MainActivity / BootReceiver) so the
+        // service can restore its connection after a system-initiated restart.
+        private const val PREFS_NAME = "yunkiro_prefs"
+        private const val KEY_RELAY_URL = "relay_url"
+        private const val KEY_PIN = "pin"
+
         fun startService(context: Context, relayUrl: String, pin: String) {
             val intent = Intent(context, KeepAliveService::class.java).apply {
                 action = ACTION_CONNECT
@@ -58,6 +67,7 @@ class KeepAliveService : Service() {
     private var dialService: DialService? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,13 +91,29 @@ class KeepAliveService : Service() {
                 stopSelf()
             }
             else -> {
-                startForeground(NOTIFICATION_ID, createNotification("Idle"))
+                // Null/unknown intent means the system restarted us (START_STICKY)
+                // after killing the process. Restore the saved connection so
+                // background survival actually reconnects instead of sitting idle.
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val url = prefs.getString(KEY_RELAY_URL, null)
+                val pin = prefs.getString(KEY_PIN, null)
+                if (!url.isNullOrBlank() && !pin.isNullOrBlank()) {
+                    startForeground(NOTIFICATION_ID, createNotification("Reconnecting..."))
+                    connect(url, pin)
+                } else {
+                    startForeground(NOTIFICATION_ID, createNotification("Idle"))
+                }
             }
         }
         return START_STICKY
     }
 
     private fun connect(url: String, pin: String) {
+        // Tear down any existing connection first to avoid duplicate, dueling
+        // connections that fight over the same device_id and thrash reconnects.
+        relayConnection?.destroy()
+        relayConnection = null
+
         val deviceId = DeviceInfo.getDeviceId(this)
         val deviceName = DeviceInfo.getDeviceName()
 
@@ -109,12 +135,14 @@ class KeepAliveService : Service() {
 
         relayConnection?.connect(url, pin, deviceId, deviceName)
         registerNetworkCallback()
+        registerScreenReceiver()
         acquireWakeLock()
     }
 
     private fun disconnect() {
         releaseWakeLock()
         unregisterNetworkCallback()
+        unregisterScreenReceiver()
         relayConnection?.destroy()
         relayConnection = null
     }
@@ -215,6 +243,35 @@ class KeepAliveService : Service() {
             connectivityManager.unregisterNetworkCallback(it)
         }
         networkCallback = null
+    }
+
+    /**
+     * Registers a receiver for screen-on events. When the user wakes the phone
+     * (e.g. after long Doze sleep), we immediately verify the relay connection
+     * is alive and rebuild it if it has gone stale — this is what makes "wake
+     * phone -> dial works within seconds" reliable (v6 scenario 3).
+     */
+    private fun registerScreenReceiver() {
+        if (screenReceiver != null) return
+        screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_SCREEN_ON) {
+                    Log.i(TAG, "Screen on -> connection health check")
+                    relayConnection?.checkHealthAndRecover()
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver!!,
+            IntentFilter(Intent.ACTION_SCREEN_ON),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    private fun unregisterScreenReceiver() {
+        screenReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenReceiver = null
     }
 
     override fun onDestroy() {

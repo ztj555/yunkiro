@@ -77,10 +77,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Save settings
+        // Save settings (enable autostart so boot + sticky-restart reconnect)
         prefs.edit()
             .putString(KEY_RELAY_URL, url)
             .putString(KEY_PIN, pin)
+            .putBoolean(KEY_AUTOSTART, true)
             .apply()
 
         // Start foreground service
@@ -92,6 +93,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun disconnect() {
+        // Disable autostart so a manual disconnect stays disconnected across
+        // reboots / system restarts (v6 scenario 2 expectation).
+        prefs.edit().putBoolean(KEY_AUTOSTART, false).apply()
+
         KeepAliveService.stopService(this)
 
         isConnected = false
